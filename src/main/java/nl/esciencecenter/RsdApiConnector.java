@@ -49,6 +49,11 @@ public class RsdApiConnector {
 		JsonObject jsonObject = new JsonObject();
 		jsonObject.addProperty("is_published", true);
 		jsonObject.addProperty("brand_name", software.name());
+		String shortStatement = software.shortStatement();
+		if (shortStatement.length() > 300) {
+			shortStatement = shortStatement.substring(0, 297) + "...";
+		}
+		jsonObject.addProperty("short_statement", shortStatement);
 		jsonObject.addProperty("slug", sluggify(software.name()));
 		jsonObject.add("concept_doi", software.doi().isPresent() ? new JsonPrimitive(software.doi().get()) : JsonNull.INSTANCE);
 		jsonObject.add("get_started_url", software.website().isPresent() ? new JsonPrimitive(software.website().get().toString()) : JsonNull.INSTANCE);
@@ -60,6 +65,8 @@ public class RsdApiConnector {
 		return name
 				.strip()
 				.toLowerCase()
-				.replaceAll("[^a-z0-9]+", "-");
+				.replaceAll("[^a-z0-9]+", "-")
+				.replaceAll("^-+", "")
+				.replaceAll("-+$", "");
 	}
 }

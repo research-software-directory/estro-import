@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 public record EstroSoftware(
 		String name,
+		String shortStatement,
 		Collection<String> keywords,
 		Optional<URI> website,
 		Optional<URI> gitUrl,
@@ -20,6 +21,7 @@ public record EstroSoftware(
 	static EstroSoftware fromCsvLine(String line) {
 		String[] split = line.split("\\|");
 		String name = split[0];
+		String shortStatement = split[12];
 
 		Optional<URI> website = Optional.empty();
 		try {
@@ -44,6 +46,7 @@ public record EstroSoftware(
 
 		return new EstroSoftware(
 				name,
+				shortStatement,
 				Collections.emptyList(),
 				website,
 				gitUrl,

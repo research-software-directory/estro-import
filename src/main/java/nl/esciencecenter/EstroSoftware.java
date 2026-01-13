@@ -23,23 +23,9 @@ public record EstroSoftware(
 		String name = split[0];
 		String shortStatement = split[12];
 
-		Optional<URI> website = Optional.empty();
-		try {
-			String rawWebsite = split[8];
-			if (rawWebsite != null && !rawWebsite.startsWith("https://") && !rawWebsite.startsWith("http://")) {
-				rawWebsite = "https://" + rawWebsite;
-			}
-			website = rawWebsite == null ? Optional.empty() : Optional.of(new URI(rawWebsite));
-		} catch (URISyntaxException e) {
-			e.printStackTrace();
-		}
+		Optional<URI> website = extractUrl(split[8]);
 
-		Optional<URI> gitUrl = Optional.empty();
-		try {
-			gitUrl = Optional.of(new URI(split[10]));
-		} catch (URISyntaxException e) {
-			e.printStackTrace();
-		}
+		Optional<URI> gitUrl = extractUrl(split[10]);
 
 		String rawDoi = split[13];
 		Optional<String> doi = DOI_PATTERN.matcher(rawDoi).find() ? Optional.of(rawDoi) : Optional.empty();
@@ -52,5 +38,22 @@ public record EstroSoftware(
 				gitUrl,
 				doi
 		);
+	}
+
+	private static Optional<URI> extractUrl(String rawUrl) {
+		if (rawUrl == null || rawUrl.contains(" ") || !rawUrl.contains(".")) {
+			return Optional.empty();
+		}
+
+		if (!rawUrl.startsWith("https://") && !rawUrl.startsWith("http://")) {
+			rawUrl = "https://" + rawUrl;
+		}
+
+		try {
+			return Optional.of(new URI(rawUrl));
+		} catch (URISyntaxException e) {
+			e.printStackTrace();
+			return Optional.empty();
+		}
 	}
 }

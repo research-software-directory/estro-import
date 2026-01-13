@@ -9,6 +9,7 @@ public record EstroSoftware(
 		String name,
 		String shortStatement,
 		String keyword,
+		Optional<String> estroField,
 		Optional<URI> website,
 		Optional<URI> gitUrl,
 		Optional<String> doi
@@ -23,6 +24,9 @@ public record EstroSoftware(
 
 		String keyword = split[3];
 
+		String rawEstroField = split[4];
+		Optional<String> estroField = rawEstroField == null || rawEstroField.isBlank() ? Optional.empty() : Optional.of(rawEstroField);
+
 		Optional<URI> website = extractUrl(split[8]);
 
 		Optional<URI> gitUrl = extractUrl(split[10]);
@@ -34,6 +38,7 @@ public record EstroSoftware(
 				name,
 				shortStatement,
 				keyword,
+				estroField,
 				website,
 				gitUrl,
 				doi

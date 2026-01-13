@@ -15,12 +15,15 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 
 public class RsdApiConnector {
 
 	private final URI domain;
 	private final String jwt;
-
+	private final Map<String, String> categoryToId = new HashMap<>();
 
 	public RsdApiConnector(URI domain, String jwtSecret) {
 		this.domain = domain;
@@ -43,6 +46,24 @@ public class RsdApiConnector {
 			HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 			String estroId = extractId(response.body());
 
+			URI categoryUrl = URI.create(domain.toASCIIString() + "/api/v1/category");
+			String categoryJson = createCategoryJson(estroId, "Field", "ESTRO field", Optional.empty());
+			httpRequest = HttpRequest.newBuilder()
+					.uri(categoryUrl)
+					.POST(HttpRequest.BodyPublishers.ofString(categoryJson))
+					.header("Authorization", "Bearer " + jwt)
+					.header("Prefer", "return=representation")
+					.build();
+			response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+			if (response.statusCode() != 201) {
+				System.out.println(response.statusCode());
+				System.out.println(response.body());
+				System.out.println(categoryJson);
+				System.out.println();
+				return;
+			}
+			String rootCategoryId = extractId(response.body());
+
 			URI softwareUrl = URI.create(domain.toASCIIString() + "/api/v1/software?select=id");
 
 			for (EstroSoftware estroSoftware : software) {
@@ -54,7 +75,6 @@ public class RsdApiConnector {
 						.header("Prefer", "return=representation")
 						.build();
 				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-
 				if (response.statusCode() != 201) {
 					System.out.println(response.statusCode());
 					System.out.println(response.body());
@@ -114,6 +134,45 @@ public class RsdApiConnector {
 					continue;
 				}
 
+				if (estroSoftware.estroField().isPresent()) {
+					String estroFieldName = estroSoftware.estroField().get();
+					if (!categoryToId.containsKey(estroFieldName)) {
+						categoryJson = createCategoryJson(estroId, estroFieldName, estroFieldName, Optional.of(rootCategoryId));
+						httpRequest = HttpRequest.newBuilder()
+								.uri(categoryUrl)
+								.POST(HttpRequest.BodyPublishers.ofString(categoryJson))
+								.header("Authorization", "Bearer " + jwt)
+								.header("Prefer", "return=representation")
+								.build();
+						response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+						if (response.statusCode() != 201) {
+							System.out.println(response.statusCode());
+							System.out.println(response.body());
+							System.out.println(categoryJson);
+							System.out.println();
+							continue;
+						}
+						categoryToId.put(estroFieldName, extractId(response.body()));
+					}
+
+					String categoryId = categoryToId.get(estroFieldName);
+					URI categoryForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/category_for_software");
+					String categoryForSoftwareJson = "{\"category_id\": \"%s\", \"software_id\": \"%s\"}".formatted(categoryId, softwareId);
+					httpRequest = HttpRequest.newBuilder()
+							.uri(categoryForSoftwareUrl)
+							.POST(HttpRequest.BodyPublishers.ofString(categoryForSoftwareJson))
+							.header("Authorization", "Bearer " + jwt)
+							.build();
+					response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+					if (response.statusCode() != 201) {
+						System.out.println(response.statusCode());
+						System.out.println(response.body());
+						System.out.println(categoryForSoftwareJson);
+						System.out.println();
+						continue;
+					}
+				}
+
 				if (estroSoftware.gitUrl().isPresent()) {
 					String gitJson = toGitUrlJson(estroSoftware, softwareId);
 
@@ -136,6 +195,18 @@ public class RsdApiConnector {
 				}
 			}
 		}
+	}
+
+	private static String createCategoryJson(String estroId, String shortName, String longName, Optional<String> parent) {
+		JsonObject jsonObject = new JsonObject();
+
+		jsonObject.addProperty("community", estroId);
+		jsonObject.addProperty("short_name", shortName);
+		jsonObject.addProperty("name", longName);
+		jsonObject.addProperty("allow_software", true);
+		jsonObject.add("parent", parent.isPresent() ? new JsonPrimitive(parent.get()) : JsonNull.INSTANCE);
+
+		return jsonObject.toString();
 	}
 
 	private static String extractId(String response) {

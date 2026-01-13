@@ -21,13 +21,11 @@ public class Main {
 		int success = 0;
 		int fail = 0;
 		for (String line : lines) {
-			// System.out.println(line);
 			EstroSoftware estroSoftware;
 			try {
 				estroSoftware = EstroSoftware.fromCsvLine(line);
 				successfullyParsedSoftware.add(estroSoftware);
 				++success;
-				System.out.println(estroSoftware);
 			} catch (RuntimeException e) {
 				++fail;
 			}

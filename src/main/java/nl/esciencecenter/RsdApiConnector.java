@@ -1,5 +1,7 @@
 package nl.esciencecenter;
 
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -10,32 +12,48 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 
 public class RsdApiConnector {
 
 	private final URI domain;
-	private final String apiToken;
+	private final String jwt;
 
 
-	public RsdApiConnector(URI domain, String apiToken) {
+	public RsdApiConnector(URI domain, String jwtSecret) {
 		this.domain = domain;
-		this.apiToken = apiToken;
+
+		this.jwt = JWT.create()
+				.withClaim("iss", "estro_import_script")
+				.withClaim("role", "rsd_admin")
+				.withExpiresAt(Instant.now().plus(Duration.ofHours(1)))
+				.sign(Algorithm.HMAC256(jwtSecret));
 	}
 
 	public void saveSoftware(Collection<EstroSoftware> software) throws IOException, InterruptedException {
-		URI softwareUrl = URI.create(domain.toString() + "/api/v2/software?select=id");
-
 		try (HttpClient client = HttpClient.newHttpClient()) {
+			URI communityUrl = URI.create(domain.toASCIIString() + "/api/v1/community?slug=eq.estro");
+			HttpRequest httpRequest = HttpRequest.newBuilder()
+					.uri(communityUrl)
+					.GET()
+					.build();
+
+			HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+			String estroId = extractEstroCommunityId(response.body());
+
+			URI softwareUrl = URI.create(domain.toASCIIString() + "/api/v1/software?select=id");
+
 			for (EstroSoftware estroSoftware : software) {
 				String jsonBody = toSoftwareJson(estroSoftware);
-				HttpRequest httpRequest = HttpRequest.newBuilder()
+				httpRequest = HttpRequest.newBuilder()
 						.uri(softwareUrl)
 						.POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-						.header("Authorization", "Bearer " + apiToken)
+						.header("Authorization", "Bearer " + jwt)
 						.header("Prefer", "return=representation")
 						.build();
-				HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
 				if (response.statusCode() != 201) {
 					System.out.println(response.statusCode());
@@ -45,16 +63,32 @@ public class RsdApiConnector {
 					continue;
 				}
 
-				if (estroSoftware.gitUrl().isPresent()) {
-					String id = extractId(response.body());
-					String gitJson = toGitUrlJson(estroSoftware, id);
+				String softwareId = extractId(response.body());
+				String communitySoftwareJson = toCommunityForSoftwareJson(softwareId, estroId);
+				URI softwareForCommunityUrl = URI.create(domain.toASCIIString() + "/api/v1/software_for_community");
+				httpRequest = HttpRequest.newBuilder()
+						.uri(softwareForCommunityUrl)
+						.POST(HttpRequest.BodyPublishers.ofString(communitySoftwareJson))
+						.header("Authorization", "Bearer " + jwt)
+						.build();
+				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+				if (response.statusCode() != 201) {
+					System.out.println(response.statusCode());
+					System.out.println(response.body());
+					System.out.println(communitySoftwareJson);
+					System.out.println();
+					continue;
+				}
 
-					URI gitRepoUrl = URI.create(domain.toString() + "/api/v2/repository_url");
+				if (estroSoftware.gitUrl().isPresent()) {
+					String gitJson = toGitUrlJson(estroSoftware, softwareId);
+
+					URI gitRepoUrl = URI.create(domain.toASCIIString() + "/api/v1/repository_url");
 
 					httpRequest = HttpRequest.newBuilder()
 							.uri(gitRepoUrl)
 							.POST(HttpRequest.BodyPublishers.ofString(gitJson))
-							.header("Authorization", "Bearer " + apiToken)
+							.header("Authorization", "Bearer " + jwt)
 							.build();
 
 					response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
@@ -70,8 +104,21 @@ public class RsdApiConnector {
 		}
 	}
 
+	private static String extractEstroCommunityId(String response) {
+		return JsonParser.parseString(response).getAsJsonArray().get(0).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
+	}
+
 	private static String extractId(String response) {
 		return JsonParser.parseString(response).getAsJsonArray().get(0).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
+	}
+
+	private static String toCommunityForSoftwareJson(String softwareId, String estroId) {
+		JsonObject jsonObject = new JsonObject();
+		jsonObject.addProperty("software", softwareId);
+		jsonObject.addProperty("community", estroId);
+		jsonObject.addProperty("status", "approved");
+
+		return jsonObject.toString();
 	}
 
 	private static String toGitUrlJson(EstroSoftware software, String id) {

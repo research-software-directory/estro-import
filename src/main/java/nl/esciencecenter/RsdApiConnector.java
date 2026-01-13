@@ -41,7 +41,7 @@ public class RsdApiConnector {
 					.build();
 
 			HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-			String estroId = extractEstroCommunityId(response.body());
+			String estroId = extractId(response.body());
 
 			URI softwareUrl = URI.create(domain.toASCIIString() + "/api/v1/software?select=id");
 
@@ -80,6 +80,40 @@ public class RsdApiConnector {
 					continue;
 				}
 
+				String keywordJson = "{\"value\": \"%s\"}".formatted(estroSoftware.keyword());
+				URI keywordUrl = URI.create(domain.toASCIIString() + "/api/v1/keyword?select=id&on_conflict=value");
+				httpRequest = HttpRequest.newBuilder()
+						.uri(keywordUrl)
+						.POST(HttpRequest.BodyPublishers.ofString(keywordJson))
+						.header("Authorization", "Bearer " + jwt)
+						.header("Prefer", "resolution=merge-duplicates")
+						.header("Prefer", "return=representation")
+						.build();
+				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+				if (response.statusCode() >= 300) {
+					System.out.println(response.statusCode());
+					System.out.println(response.body());
+					System.out.println(keywordJson);
+					System.out.println();
+					continue;
+				}
+				String keywordId = extractId(response.body());
+				String keywordForSoftwareJson = toKeywordForSoftwareJson(softwareId, keywordId);
+				URI keywordForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/keyword_for_software");
+				httpRequest = HttpRequest.newBuilder()
+						.uri(keywordForSoftwareUrl)
+						.POST(HttpRequest.BodyPublishers.ofString(keywordForSoftwareJson))
+						.header("Authorization", "Bearer " + jwt)
+						.build();
+				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+				if (response.statusCode() != 201) {
+					System.out.println(response.statusCode());
+					System.out.println(response.body());
+					System.out.println(keywordForSoftwareJson);
+					System.out.println();
+					continue;
+				}
+
 				if (estroSoftware.gitUrl().isPresent()) {
 					String gitJson = toGitUrlJson(estroSoftware, softwareId);
 
@@ -104,12 +138,16 @@ public class RsdApiConnector {
 		}
 	}
 
-	private static String extractEstroCommunityId(String response) {
+	private static String extractId(String response) {
 		return JsonParser.parseString(response).getAsJsonArray().get(0).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
 	}
 
-	private static String extractId(String response) {
-		return JsonParser.parseString(response).getAsJsonArray().get(0).getAsJsonObject().getAsJsonPrimitive("id").getAsString();
+	private static String toKeywordForSoftwareJson(String softwareId, String keywordId) {
+		JsonObject jsonObject = new JsonObject();
+		jsonObject.addProperty("software", softwareId);
+		jsonObject.addProperty("keyword", keywordId);
+
+		return jsonObject.toString();
 	}
 
 	private static String toCommunityForSoftwareJson(String softwareId, String estroId) {

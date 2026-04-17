@@ -31,8 +31,8 @@ public class Main {
 			}
 		}
 
-		System.out.println(success);
-		System.out.println(fail);
+		System.out.println("Parsed software entries success: " + success);
+		System.out.println("Parsed software entries failure: " + fail);
 
 		URI baseDomain = URI.create(args[0]);
 		String apiToken = args[1];

@@ -2,7 +2,7 @@ This repo contains a script for importing ESTRO software from a CSV file.
 
 This script follows a standard Maven setup. The CSV file can be found in the resources.
 
-Before this script is ran, an RSD must be running with a community with slug `estro`.
+Before this script is ran, an RSD must be running with a community with slug `rs4rt`.
 
 The Java program expects two arguments, which are in order:
 

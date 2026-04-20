@@ -12,7 +12,8 @@ public record EstroSoftware(
 		Optional<String> estroField,
 		Optional<URI> website,
 		Optional<URI> gitUrl,
-		Optional<String> doi
+		Optional<String> doi,
+		Optional<Image> image
 ) {
 
 	private static final Pattern DOI_PATTERN = Pattern.compile("^10(\\.\\w+)+/\\S+$");
@@ -35,6 +36,19 @@ public record EstroSoftware(
 			String rawDoi = split[13];
 			Optional<String> doi = DOI_PATTERN.matcher(rawDoi).find() ? Optional.of(rawDoi) : Optional.empty();
 
+			Optional<Image> optionalImage = Optional.empty();
+			if (split.length >= 16) {
+				String imageUrl = split[15];
+
+				try {
+					Image downloadedImage = ImageDownloader.downloadImage(imageUrl);
+					optionalImage = Optional.of(downloadedImage);
+				} catch (Exception e) {
+					System.err.println("Skipping image of " + name);
+					e.printStackTrace();
+				}
+			}
+
 			return new EstroSoftware(
 					name,
 					shortStatement,
@@ -42,7 +56,8 @@ public record EstroSoftware(
 					estroField,
 					website,
 					gitUrl,
-					doi
+					doi,
+					optionalImage
 			);
 		} catch (RuntimeException e) {
 			throw new RuntimeException(line, e);

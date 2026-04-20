@@ -68,7 +68,7 @@ public class RsdApiConnector {
 		getAllRepoUrls();
 
 		try (HttpClient client = HttpClient.newHttpClient()) {
-			URI communityUrl = URI.create(domain.toASCIIString() + "/api/v1/community?slug=eq.estro");
+			URI communityUrl = URI.create(domain.toASCIIString() + "/api/v1/community?slug=eq.rs4rt");
 			HttpRequest httpRequest = HttpRequest.newBuilder()
 					.uri(communityUrl)
 					.GET()

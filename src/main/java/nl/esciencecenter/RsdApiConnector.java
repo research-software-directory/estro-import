@@ -2,6 +2,8 @@ package nl.esciencecenter;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -24,6 +26,7 @@ public class RsdApiConnector {
 	private final URI domain;
 	private final String jwt;
 	private final Map<String, String> categoryToId = new HashMap<>();
+	private final Map<String, String> repoUrlToId = new HashMap<>();
 
 	public RsdApiConnector(URI domain, String jwtSecret) {
 		this.domain = domain;
@@ -35,7 +38,35 @@ public class RsdApiConnector {
 				.sign(Algorithm.HMAC256(jwtSecret));
 	}
 
+	private void getAllRepoUrls() throws IOException, InterruptedException {
+		try (HttpClient client = HttpClient.newHttpClient()) {
+			URI reposUrl = URI.create(domain.toASCIIString() + "/api/v1/repository_url?select=id,url");
+			HttpRequest httpRequest = HttpRequest.newBuilder()
+					.uri(reposUrl)
+					.GET()
+					.header("Authorization", "Bearer " + jwt)
+					.build();
+
+			HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+			if (response.statusCode() != 200) {
+				System.out.println(response.statusCode());
+				System.out.println(response.body());
+				System.out.println();
+				return;
+			}
+
+			JsonArray jsonArray = JsonParser.parseString(response.body()).getAsJsonArray();
+			for (JsonElement jsonElement : jsonArray) {
+				String id = jsonElement.getAsJsonObject().getAsJsonPrimitive("id").getAsString();
+				String url = jsonElement.getAsJsonObject().getAsJsonPrimitive("url").getAsString();
+				repoUrlToId.put(url, id);
+			}
+		}
+	}
+
 	public void saveSoftware(Collection<EstroSoftware> software) throws IOException, InterruptedException {
+		getAllRepoUrls();
+
 		try (HttpClient client = HttpClient.newHttpClient()) {
 			URI communityUrl = URI.create(domain.toASCIIString() + "/api/v1/community?slug=eq.estro");
 			HttpRequest httpRequest = HttpRequest.newBuilder()
@@ -174,13 +205,44 @@ public class RsdApiConnector {
 				}
 
 				if (estroSoftware.gitUrl().isPresent()) {
-					String gitJson = toGitUrlJson(estroSoftware, softwareId);
+					String url = estroSoftware.gitUrl().get().toASCIIString();
+					if (!repoUrlToId.containsKey(url)) {
+						URI gitRepoUrl = URI.create(domain.toASCIIString() + "/api/v1/repository_url");
+						String gitJson = toGitUrlJson(estroSoftware);
+						httpRequest = HttpRequest.newBuilder()
+								.uri(gitRepoUrl)
+								.POST(HttpRequest.BodyPublishers.ofString(gitJson))
+								.header("Authorization", "Bearer " + jwt)
+								.header("Prefer", "return=representation")
+								.build();
 
-					URI gitRepoUrl = URI.create(domain.toASCIIString() + "/api/v1/repository_url");
+						response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+						if (response.statusCode() != 201) {
+							System.out.println(response.statusCode());
+							System.out.println(response.body());
+							System.out.println(gitJson);
+							System.out.println();
+						}
+
+						String id = JsonParser
+								.parseString(response.body())
+								.getAsJsonArray()
+								.get(0)
+								.getAsJsonObject()
+								.getAsJsonPrimitive("id")
+								.getAsString();
+
+						repoUrlToId.put(url, id);
+					}
+
+					String repoUrlId = repoUrlToId.get(url);
+					String repoUrlForSoftwareJson = toRepoUrlForSoftwareJson(softwareId, repoUrlId);
+					URI gitRepoForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/repository_url_for_software");
 
 					httpRequest = HttpRequest.newBuilder()
-							.uri(gitRepoUrl)
-							.POST(HttpRequest.BodyPublishers.ofString(gitJson))
+							.uri(gitRepoForSoftwareUrl)
+							.POST(HttpRequest.BodyPublishers.ofString(repoUrlForSoftwareJson))
 							.header("Authorization", "Bearer " + jwt)
 							.build();
 
@@ -189,7 +251,7 @@ public class RsdApiConnector {
 					if (response.statusCode() != 201) {
 						System.out.println(response.statusCode());
 						System.out.println(response.body());
-						System.out.println(gitJson);
+						System.out.println(repoUrlForSoftwareJson);
 						System.out.println();
 					}
 				}
@@ -230,10 +292,17 @@ public class RsdApiConnector {
 		return jsonObject.toString();
 	}
 
-	private static String toGitUrlJson(EstroSoftware software, String id) {
+	private static String toRepoUrlForSoftwareJson(String softwareId, String repoUrlId) {
 		JsonObject jsonObject = new JsonObject();
+		jsonObject.addProperty("software", softwareId);
+		jsonObject.addProperty("repository_url", repoUrlId);
+		jsonObject.addProperty("position", 0);
 
-		jsonObject.addProperty("software", id);
+		return jsonObject.toString();
+	}
+
+	private static String toGitUrlJson(EstroSoftware software) {
+		JsonObject jsonObject = new JsonObject();
 
 		String url = software.gitUrl().orElseThrow().toString();
 		jsonObject.addProperty("url", url);

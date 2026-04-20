@@ -27,6 +27,7 @@ public class Main {
 				successfullyParsedSoftware.add(estroSoftware);
 				++success;
 			} catch (RuntimeException e) {
+				e.printStackTrace();
 				++fail;
 			}
 		}

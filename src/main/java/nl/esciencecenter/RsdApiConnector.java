@@ -14,12 +14,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class RsdApiConnector {
 
@@ -27,6 +31,16 @@ public class RsdApiConnector {
 	private final String jwt;
 	private final Map<String, String> categoryToId = new HashMap<>();
 	private final Map<String, String> repoUrlToId = new HashMap<>();
+	private static final Collection<String> ACCEPTED_IMAGE_MIME_TYPES = Set.of(
+			"image/avif",
+			"image/gif",
+			"image/jpeg",
+			"image/png",
+			"image/svg+xml",
+			"image/webp",
+			"image/x-ico"
+	);
+	private static final HttpClient client = HttpClient.newBuilder().build();
 
 	public RsdApiConnector(URI domain, String jwtSecret) {
 		this.domain = domain;
@@ -98,7 +112,17 @@ public class RsdApiConnector {
 			URI softwareUrl = URI.create(domain.toASCIIString() + "/api/v1/software?select=id");
 
 			for (EstroSoftware estroSoftware : software) {
-				String jsonBody = toSoftwareJson(estroSoftware);
+				Optional<String> imageId = Optional.empty();
+				if (estroSoftware.image().isPresent()) {
+					try {
+						imageId = Optional.of(saveImage(estroSoftware.image().get()));
+					} catch (Exception e) {
+						System.err.println("Skipping image for " + estroSoftware.name());
+						e.printStackTrace();
+					}
+				}
+
+				String jsonBody = toSoftwareJson(estroSoftware, imageId);
 				httpRequest = HttpRequest.newBuilder()
 						.uri(softwareUrl)
 						.POST(HttpRequest.BodyPublishers.ofString(jsonBody))
@@ -259,6 +283,37 @@ public class RsdApiConnector {
 		}
 	}
 
+	private String saveImage(Image image) throws IOException, InterruptedException {
+		String mimeType = image.mimeType();
+		if (!ACCEPTED_IMAGE_MIME_TYPES.contains(mimeType)) {
+			throw new IllegalArgumentException("Unsupported mime type for image: " + mimeType);
+		}
+
+		byte[] base64EncodedData = Base64.getEncoder().encode(image.bytes());
+		JsonObject imageObject = new JsonObject();
+		imageObject.addProperty("data", new String(base64EncodedData));
+		imageObject.addProperty("mime_type", mimeType);
+
+		URI imageUri = URI.create(domain.toASCIIString() + "/api/v1/image?select=id");
+		HttpResponse<String> response = doAdminPostRequest(imageUri, imageObject.toString(), List.of(List.of("Prefer", "resolution=merge-duplicates")));
+
+		return extractId(response.body());
+	}
+
+	private HttpResponse<String> doAdminPostRequest(URI uri, String body, Collection<List<String>> extraHeaders) throws IOException, InterruptedException {
+		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(uri)
+				.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+				.header("Authorization", "Bearer " + jwt)
+				.header("Prefer", "return=representation");
+
+		for (List<String> extraHeader : extraHeaders) {
+			requestBuilder.header(extraHeader.get(0), extraHeader.get(1));
+		}
+
+		HttpRequest request = requestBuilder.build();
+		return client.send(request, HttpResponse.BodyHandlers.ofString());
+	}
+
 	private static String createCategoryJson(String estroId, String shortName, String longName, Optional<String> parent) {
 		JsonObject jsonObject = new JsonObject();
 
@@ -318,7 +373,7 @@ public class RsdApiConnector {
 		return jsonObject.toString();
 	}
 
-	private static String toSoftwareJson(EstroSoftware software) {
+	private static String toSoftwareJson(EstroSoftware software, Optional<String> imageId) {
 		JsonObject jsonObject = new JsonObject();
 		jsonObject.addProperty("is_published", true);
 		jsonObject.addProperty("brand_name", software.name());
@@ -330,6 +385,8 @@ public class RsdApiConnector {
 		jsonObject.addProperty("slug", sluggify(software.name()));
 		jsonObject.add("concept_doi", software.doi().isPresent() ? new JsonPrimitive(software.doi().get()) : JsonNull.INSTANCE);
 		jsonObject.add("get_started_url", software.website().isPresent() ? new JsonPrimitive(software.website().get().toString()) : JsonNull.INSTANCE);
+
+		jsonObject.add("image_id", imageId.isPresent() ? new JsonPrimitive(imageId.get()) : JsonNull.INSTANCE);
 
 		return jsonObject.toString();
 	}

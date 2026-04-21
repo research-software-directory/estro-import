@@ -20,10 +20,15 @@ public class Main {
 		Collection<EstroSoftware> successfullyParsedSoftware = new ArrayList<>();
 		int success = 0;
 		int fail = 0;
+		int skipped = 0;
 		for (String line : lines) {
 			EstroSoftware estroSoftware;
 			try {
 				estroSoftware = EstroSoftware.fromCsvLine(line);
+				if (estroSoftware.name().equals("3DSlicer")) {
+					++skipped;
+					continue;
+				}
 				successfullyParsedSoftware.add(estroSoftware);
 				++success;
 			} catch (RuntimeException e) {
@@ -33,6 +38,7 @@ public class Main {
 		}
 
 		System.out.println("Parsed software entries success: " + success);
+		System.out.println("Parsed software entries skipped: " + skipped);
 		System.out.println("Parsed software entries failure: " + fail);
 
 		URI baseDomain = URI.create(args[0]);

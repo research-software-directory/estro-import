@@ -19,11 +19,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 
 public class RsdApiConnector {
 
@@ -31,6 +33,7 @@ public class RsdApiConnector {
 	private final String jwt;
 	private final Map<String, String> categoryToId = new HashMap<>();
 	private final Map<String, String> repoUrlToId = new HashMap<>();
+	private final Map<String, String> keywordToId = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 	private static final Collection<String> ACCEPTED_IMAGE_MIME_TYPES = Set.of(
 			"image/avif",
 			"image/gif",
@@ -155,38 +158,32 @@ public class RsdApiConnector {
 					continue;
 				}
 
-				String keywordJson = "{\"value\": \"%s\"}".formatted(estroSoftware.keyword());
-				URI keywordUrl = URI.create(domain.toASCIIString() + "/api/v1/keyword?select=id&on_conflict=value");
-				httpRequest = HttpRequest.newBuilder()
-						.uri(keywordUrl)
-						.POST(HttpRequest.BodyPublishers.ofString(keywordJson))
-						.header("Authorization", "Bearer " + jwt)
-						.header("Prefer", "resolution=merge-duplicates")
-						.header("Prefer", "return=representation")
-						.build();
-				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-				if (response.statusCode() >= 300) {
-					System.out.println(response.statusCode());
-					System.out.println(response.body());
-					System.out.println(keywordJson);
-					System.out.println();
-					continue;
-				}
-				String keywordId = extractId(response.body());
-				String keywordForSoftwareJson = toKeywordForSoftwareJson(softwareId, keywordId);
-				URI keywordForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/keyword_for_software");
-				httpRequest = HttpRequest.newBuilder()
-						.uri(keywordForSoftwareUrl)
-						.POST(HttpRequest.BodyPublishers.ofString(keywordForSoftwareJson))
-						.header("Authorization", "Bearer " + jwt)
-						.build();
-				response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-				if (response.statusCode() != 201) {
-					System.out.println(response.statusCode());
-					System.out.println(response.body());
-					System.out.println(keywordForSoftwareJson);
-					System.out.println();
-					continue;
+				for (String keyword : estroSoftware.keywords()) {
+					if (!keywordToId.containsKey(keyword)) {
+						String keywordJson = "{\"value\": \"%s\"}".formatted(keyword);
+						URI keywordUrl = URI.create(domain.toASCIIString() + "/api/v1/keyword?select=id&on_conflict=value");
+						response = doAdminPostRequest(keywordUrl, keywordJson, List.of(List.of("Prefer", "resolution=merge-duplicates")));
+						if (response.statusCode() >= 300) {
+							System.out.println(response.statusCode());
+							System.out.println(response.body());
+							System.out.println(keywordJson);
+							System.out.println();
+							continue;
+						}
+						String keywordId = extractId(response.body());
+						keywordToId.put(keyword, keywordId);
+					}
+
+					String keywordId = keywordToId.get(keyword);
+					String keywordForSoftwareJson = toKeywordForSoftwareJson(softwareId, keywordId);
+					URI keywordForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/keyword_for_software");
+					response = doAdminPostRequest(keywordForSoftwareUrl, keywordForSoftwareJson, Collections.emptyList());
+					if (response.statusCode() != 201) {
+						System.out.println(response.statusCode());
+						System.out.println(response.body());
+						System.out.println(keywordForSoftwareJson);
+						System.out.println();
+					}
 				}
 
 				if (estroSoftware.estroField().isPresent()) {

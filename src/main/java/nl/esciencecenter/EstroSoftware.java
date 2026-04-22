@@ -2,13 +2,15 @@ package nl.esciencecenter;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
 public record EstroSoftware(
 		String name,
 		String shortStatement,
-		String keyword,
+		List<String> keywords,
 		Optional<String> estroField,
 		Optional<URI> website,
 		Optional<URI> gitUrl,
@@ -24,7 +26,8 @@ public record EstroSoftware(
 			String name = split[0];
 			String shortStatement = split[12];
 
-			String keyword = split[3];
+			String[] keywordsSplit = split[3].split(", ");
+			List<String> keywords = Arrays.asList(keywordsSplit);
 
 			String rawEstroField = split[4];
 			Optional<String> estroField = rawEstroField == null || rawEstroField.isBlank() ? Optional.empty() : Optional.of(rawEstroField);
@@ -52,7 +55,7 @@ public record EstroSoftware(
 			return new EstroSoftware(
 					name,
 					shortStatement,
-					keyword,
+					keywords,
 					estroField,
 					website,
 					gitUrl,

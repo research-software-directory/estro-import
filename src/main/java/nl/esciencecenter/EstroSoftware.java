@@ -11,6 +11,7 @@ public record EstroSoftware(
 		String name,
 		String shortStatement,
 		List<String> keywords,
+		String codeType,
 		Optional<String> estroField,
 		Optional<URI> website,
 		Optional<URI> gitUrl,
@@ -28,6 +29,8 @@ public record EstroSoftware(
 
 			String[] keywordsSplit = split[3].split(", ");
 			List<String> keywords = Arrays.asList(keywordsSplit);
+
+			String codeType = split[2];
 
 			String rawEstroField = split[4];
 			Optional<String> estroField = rawEstroField == null || rawEstroField.isBlank() ? Optional.empty() : Optional.of(rawEstroField);
@@ -56,6 +59,7 @@ public record EstroSoftware(
 					name,
 					shortStatement,
 					keywords,
+					codeType,
 					estroField,
 					website,
 					gitUrl,

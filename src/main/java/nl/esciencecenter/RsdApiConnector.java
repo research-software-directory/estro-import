@@ -43,6 +43,7 @@ public class RsdApiConnector {
 			"image/webp",
 			"image/x-ico"
 	);
+	private final URI categoryUrl;
 	private static final HttpClient client = HttpClient.newBuilder().build();
 
 	public RsdApiConnector(URI domain, String jwtSecret) {
@@ -53,6 +54,8 @@ public class RsdApiConnector {
 				.withClaim("role", "rsd_admin")
 				.withExpiresAt(Instant.now().plus(Duration.ofHours(1)))
 				.sign(Algorithm.HMAC256(jwtSecret));
+
+		this.categoryUrl = URI.create(domain.toASCIIString() + "/api/v1/category");
 	}
 
 	private void getAllRepoUrls() throws IOException, InterruptedException {
@@ -94,15 +97,8 @@ public class RsdApiConnector {
 			HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 			String estroId = extractId(response.body());
 
-			URI categoryUrl = URI.create(domain.toASCIIString() + "/api/v1/category");
 			String categoryJson = createCategoryJson(estroId, "Field", "ESTRO field", Optional.empty());
-			httpRequest = HttpRequest.newBuilder()
-					.uri(categoryUrl)
-					.POST(HttpRequest.BodyPublishers.ofString(categoryJson))
-					.header("Authorization", "Bearer " + jwt)
-					.header("Prefer", "return=representation")
-					.build();
-			response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+			response = doAdminPostRequest(categoryUrl, categoryJson, Collections.emptyList());
 			if (response.statusCode() != 201) {
 				System.out.println(response.statusCode());
 				System.out.println(response.body());
@@ -110,7 +106,18 @@ public class RsdApiConnector {
 				System.out.println();
 				return;
 			}
-			String rootCategoryId = extractId(response.body());
+			String rootEstroFieldCategoryId = extractId(response.body());
+
+			categoryJson = createCategoryJson(estroId, "Code type", "ESTRO code type", Optional.empty());
+			response = doAdminPostRequest(categoryUrl, categoryJson, Collections.emptyList());
+			if (response.statusCode() != 201) {
+				System.out.println(response.statusCode());
+				System.out.println(response.body());
+				System.out.println(categoryJson);
+				System.out.println();
+				return;
+			}
+			String rootCodeTypeCategoryId = extractId(response.body());
 
 			URI softwareUrl = URI.create(domain.toASCIIString() + "/api/v1/software?select=id");
 
@@ -186,43 +193,12 @@ public class RsdApiConnector {
 					}
 				}
 
+				String codeType = estroSoftware.codeType();
+				saveCategoryForSoftware(codeType, estroId, rootCodeTypeCategoryId, softwareId);
+
 				if (estroSoftware.estroField().isPresent()) {
 					String estroFieldName = estroSoftware.estroField().get();
-					if (!categoryToId.containsKey(estroFieldName)) {
-						categoryJson = createCategoryJson(estroId, estroFieldName, estroFieldName, Optional.of(rootCategoryId));
-						httpRequest = HttpRequest.newBuilder()
-								.uri(categoryUrl)
-								.POST(HttpRequest.BodyPublishers.ofString(categoryJson))
-								.header("Authorization", "Bearer " + jwt)
-								.header("Prefer", "return=representation")
-								.build();
-						response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-						if (response.statusCode() != 201) {
-							System.out.println(response.statusCode());
-							System.out.println(response.body());
-							System.out.println(categoryJson);
-							System.out.println();
-							continue;
-						}
-						categoryToId.put(estroFieldName, extractId(response.body()));
-					}
-
-					String categoryId = categoryToId.get(estroFieldName);
-					URI categoryForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/category_for_software");
-					String categoryForSoftwareJson = "{\"category_id\": \"%s\", \"software_id\": \"%s\"}".formatted(categoryId, softwareId);
-					httpRequest = HttpRequest.newBuilder()
-							.uri(categoryForSoftwareUrl)
-							.POST(HttpRequest.BodyPublishers.ofString(categoryForSoftwareJson))
-							.header("Authorization", "Bearer " + jwt)
-							.build();
-					response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-					if (response.statusCode() != 201) {
-						System.out.println(response.statusCode());
-						System.out.println(response.body());
-						System.out.println(categoryForSoftwareJson);
-						System.out.println();
-						continue;
-					}
+					saveCategoryForSoftware(estroFieldName, estroId, rootEstroFieldCategoryId, softwareId);
 				}
 
 				if (estroSoftware.gitUrl().isPresent()) {
@@ -277,6 +253,33 @@ public class RsdApiConnector {
 					}
 				}
 			}
+		}
+	}
+
+	private void saveCategoryForSoftware(String codeType, String estroId, String parentCategoryId, String softwareId) throws IOException, InterruptedException {
+		HttpResponse<String> response;
+		if (!categoryToId.containsKey(codeType)) {
+			String categoryJson = createCategoryJson(estroId, codeType, codeType, Optional.of(parentCategoryId));
+			response = doAdminPostRequest(categoryUrl, categoryJson, Collections.emptyList());
+			if (response.statusCode() != 201) {
+				System.out.println(response.statusCode());
+				System.out.println(response.body());
+				System.out.println(categoryJson);
+				System.out.println();
+				return;
+			}
+			categoryToId.put(codeType, extractId(response.body()));
+		}
+
+		String categoryId = categoryToId.get(codeType);
+		URI categoryForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/category_for_software");
+		String categoryForSoftwareJson = "{\"category_id\": \"%s\", \"software_id\": \"%s\"}".formatted(categoryId, softwareId);
+		response = doAdminPostRequest(categoryForSoftwareUrl, categoryForSoftwareJson, Collections.emptyList());
+		if (response.statusCode() != 201) {
+			System.out.println(response.statusCode());
+			System.out.println(response.body());
+			System.out.println(categoryForSoftwareJson);
+			System.out.println();
 		}
 	}
 

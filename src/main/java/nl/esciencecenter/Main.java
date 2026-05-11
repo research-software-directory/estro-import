@@ -1,7 +1,6 @@
 package nl.esciencecenter;
 
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
@@ -9,22 +8,25 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 public class Main {
-	public static void main(String[] args) throws IOException, InterruptedException {
+	public static void main(String[] args) throws Exception {
 		ClassLoader classloader = Thread.currentThread().getContextClassLoader();
-		InputStream is = classloader.getResourceAsStream("data-estro.csv");
+		InputStream is = classloader.getResourceAsStream("registry-v2.0.csv");
 		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-		List<String> lines = bufferedReader.lines().skip(1).toList();
+		List<String> lines = bufferedReader.lines().toList();
+
+		Map<String, Integer> indexMap = EstroSoftware.parseHeader(lines.getFirst());
 
 		Collection<EstroSoftware> successfullyParsedSoftware = new ArrayList<>();
 		int success = 0;
 		int fail = 0;
 		int skipped = 0;
-		for (String line : lines) {
+		for (String line : lines.subList(1, lines.size())) {
 			EstroSoftware estroSoftware;
 			try {
-				estroSoftware = EstroSoftware.fromCsvLine(line);
+				estroSoftware = EstroSoftware.fromCsvLine(line, indexMap);
 				if (estroSoftware.name().equals("3DSlicer")) {
 					++skipped;
 					continue;

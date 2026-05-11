@@ -34,6 +34,7 @@ public class RsdApiConnector {
 	private final Map<String, String> categoryToId = new HashMap<>();
 	private final Map<String, String> repoUrlToId = new HashMap<>();
 	private final Map<String, String> keywordToId = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+	private Map<String, SpdxLicense> licenseMap;
 	private static final Collection<String> ACCEPTED_IMAGE_MIME_TYPES = Set.of(
 			"image/avif",
 			"image/gif",
@@ -84,8 +85,9 @@ public class RsdApiConnector {
 		}
 	}
 
-	public void saveSoftware(Collection<EstroSoftware> software) throws IOException, InterruptedException {
+	public void saveSoftware(Collection<EstroSoftware> software) throws Exception {
 		getAllRepoUrls();
+		licenseMap = GitHubSpdxLicenseRepository.getLicensesByIdMap();
 
 		try (HttpClient client = HttpClient.newHttpClient()) {
 			URI communityUrl = URI.create(domain.toASCIIString() + "/api/v1/community?slug=eq.rs4rt");
@@ -149,6 +151,15 @@ public class RsdApiConnector {
 				}
 
 				String softwareId = extractId(response.body());
+
+				if (estroSoftware.license().isPresent()) {
+					Optional<String> licenseJson = toLicenseJson(softwareId, estroSoftware.license().get(), licenseMap);
+					if (licenseJson.isPresent()) {
+						URI licenseForSoftwareUrl = URI.create(domain.toASCIIString() + "/api/v1/license_for_software");
+						doAdminPostRequest(licenseForSoftwareUrl, licenseJson.get(), Collections.emptyList());
+					}
+				}
+
 				String communitySoftwareJson = toCommunityForSoftwareJson(softwareId, estroId);
 				URI softwareForCommunityUrl = URI.create(domain.toASCIIString() + "/api/v1/software_for_community");
 				httpRequest = HttpRequest.newBuilder()
@@ -338,6 +349,27 @@ public class RsdApiConnector {
 		return jsonObject.toString();
 	}
 
+	private static Optional<String> toLicenseJson(String softwareId, String license, Map<String, SpdxLicense> spdxMap) {
+		if (license.equals("Apache 2.0") || license.equals("Apache-2.0 license")) {
+			license = "Apache-2.0";
+		} else if (license.equals("LGPL-3.0 license")) {
+			license = "LGPL-3.0";
+		}
+
+		if (!spdxMap.containsKey(license)) {
+			return Optional.empty();
+		}
+
+		SpdxLicense spdxLicense = spdxMap.get(license);
+		JsonObject result = new JsonObject();
+		result.addProperty("software", softwareId);
+		result.addProperty("license", spdxLicense.licenseId());
+		result.addProperty("name", spdxLicense.name());
+		result.addProperty("reference", spdxLicense.reference());
+
+		return Optional.of(result.toString());
+	}
+
 	private static String toCommunityForSoftwareJson(String softwareId, String estroId) {
 		JsonObject jsonObject = new JsonObject();
 		jsonObject.addProperty("software", softwareId);
@@ -377,11 +409,17 @@ public class RsdApiConnector {
 		JsonObject jsonObject = new JsonObject();
 		jsonObject.addProperty("is_published", true);
 		jsonObject.addProperty("brand_name", software.name());
+
 		String shortStatement = software.shortStatement();
 		if (shortStatement.length() > 300) {
 			shortStatement = shortStatement.substring(0, 297) + "...";
 		}
 		jsonObject.addProperty("short_statement", shortStatement);
+
+		jsonObject.addProperty("description", software.description().descriptionText().orElse(null));
+		jsonObject.addProperty("description_url", software.description().descriptionUrl().map(URI::toASCIIString).orElse(null));
+		jsonObject.addProperty("description_type", software.description().descriptionType());
+
 		jsonObject.addProperty("slug", sluggify(software.name()));
 		jsonObject.add("concept_doi", software.doi().isPresent() ? new JsonPrimitive(software.doi().get()) : JsonNull.INSTANCE);
 		jsonObject.add("get_started_url", software.website().isPresent() ? new JsonPrimitive(software.website().get().toString()) : JsonNull.INSTANCE);

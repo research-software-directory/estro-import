@@ -13,7 +13,7 @@ import java.util.Map;
 public class Main {
 	public static void main(String[] args) throws Exception {
 		ClassLoader classloader = Thread.currentThread().getContextClassLoader();
-		InputStream is = classloader.getResourceAsStream("registry-v2.0.csv");
+		InputStream is = classloader.getResourceAsStream("registry-v2.1.csv");
 		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
 		List<String> lines = bufferedReader.lines().toList();
 

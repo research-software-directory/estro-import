@@ -59,7 +59,7 @@ public record EstroSoftware(
 
 			Optional<URI> website = extractUrl(split[indexMap.get("Website")]);
 
-			Optional<URI> gitUrl = extractUrl(split[indexMap.get("Source code ")]);
+			Optional<URI> gitUrl = extractUrl(split[indexMap.get("Source code")]);
 
 			String rawDoi = split[indexMap.get("Concept DOI (from zenodo)")];
 			Matcher doiMatcher = DOI_PATTERN.matcher(rawDoi);
